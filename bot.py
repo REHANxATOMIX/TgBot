@@ -224,6 +224,7 @@ def send_welcome(message):
         "/unban - Unban a user you reply to (admin only).\n"
         "/mute - Mute a user you reply to (admin only).\n"
         "/unmute - Unmute a user you reply to (admin only).\n"
+        "/kick - Kick a user you reply to (admin only).\n"
         "/timeout <minutes> - Timeout a user you reply to for the specified number of minutes (admin only).\n"
         "/slowmode <seconds> - Set slowmode for the chat (admin only).\n"
         "/rules - Display the rules of the chat.\n"
@@ -237,20 +238,17 @@ def save_message(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
-    # Check if the message is a reply
     if message.reply_to_message:
         reply_message_id = message.reply_to_message.message_id
     else:
         reply_message_id = None
         print(f"Message {message.message_id} is not a reply.")
 
-    # Extract the keyword
     keyword = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
     if not keyword:
         bot.reply_to(message, "Please provide a keyword to save the message.")
         return
 
-    # Save the message with or without the reply message ID
     saved_messages[keyword] = {
         'message_id': reply_message_id,
         'chat_id': message.chat.id
@@ -317,8 +315,11 @@ def ban_user(message):
 
     if message.reply_to_message:
         user_id = message.reply_to_message.from_user.id
-        bot.ban_chat_member(message.chat.id, user_id)
-        bot.reply_to(message, f"User {user_id} has been banned.")
+        try:
+            bot.ban_chat_member(message.chat.id, user_id)
+            bot.reply_to(message, f"User {user_id} has been banned.")
+        except telebot.apihelper.ApiException as e:
+            bot.reply_to(message, f"Failed to ban user. Error: {str(e)}")
 
 @bot.message_handler(commands=['unban'])
 def unban_user(message):
@@ -328,8 +329,11 @@ def unban_user(message):
 
     if message.reply_to_message:
         user_id = message.reply_to_message.from_user.id
-        bot.unban_chat_member(message.chat.id, user_id)
-        bot.reply_to(message, f"User {user_id} has been unbanned.")
+        try:
+            bot.unban_chat_member(message.chat.id, user_id, only_if_banned=True)
+            bot.reply_to(message, f"User {user_id} has been unbanned.")
+        except telebot.apihelper.ApiException as e:
+            bot.reply_to(message, f"Failed to unban user. Error: {str(e)}")
 
 @bot.message_handler(commands=['mute'])
 def mute_user(message):
@@ -339,8 +343,16 @@ def mute_user(message):
 
     if message.reply_to_message:
         user_id = message.reply_to_message.from_user.id
-        bot.restrict_chat_member(message.chat.id, user_id, until_date=int(time.time()) + 3600)
-        bot.reply_to(message, f"User {user_id} has been muted for 1 hour.")
+        try:
+            bot.restrict_chat_member(
+                message.chat.id, 
+                user_id, 
+                until_date=int(time.time()) + 3600,
+                permissions=types.ChatPermissions(can_send_messages=False)
+            )
+            bot.reply_to(message, f"User {user_id} has been muted for 1 hour.")
+        except telebot.apihelper.ApiException as e:
+            bot.reply_to(message, f"Failed to mute user. Error: {str(e)}")
 
 @bot.message_handler(commands=['unmute'])
 def unmute_user(message):
@@ -350,8 +362,39 @@ def unmute_user(message):
 
     if message.reply_to_message:
         user_id = message.reply_to_message.from_user.id
-        bot.restrict_chat_member(message.chat.id, user_id, can_send_messages=True)
-        bot.reply_to(message, f"User {user_id} has been unmuted.")
+        try:
+            bot.restrict_chat_member(
+                message.chat.id, 
+                user_id, 
+                permissions=types.ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_polls=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True,
+                    can_change_info=True,
+                    can_invite_users=True,
+                    can_pin_messages=True
+                )
+            )
+            bot.reply_to(message, f"User {user_id} has been unmuted.")
+        except telebot.apihelper.ApiException as e:
+            bot.reply_to(message, f"Failed to unmute user. Error: {str(e)}")
+
+@bot.message_handler(commands=['kick'])
+def kick_user(message):
+    if not is_admin(message):
+        bot.reply_to(message, "You are not authorized to use this command.")
+        return
+
+    if message.reply_to_message:
+        user_id = message.reply_to_message.from_user.id
+        try:
+            bot.ban_chat_member(message.chat.id, user_id)
+            bot.unban_chat_member(message.chat.id, user_id)
+            bot.reply_to(message, f"User {user_id} has been kicked.")
+        except telebot.apihelper.ApiException as e:
+            bot.reply_to(message, f"Failed to kick user. Error: {str(e)}")
 
 @bot.message_handler(commands=['timeout'])
 def timeout_user(message):
@@ -363,10 +406,17 @@ def timeout_user(message):
         minutes = int(message.text.split(maxsplit=1)[1])
         if message.reply_to_message:
             user_id = message.reply_to_message.from_user.id
-            bot.restrict_chat_member(message.chat.id, user_id, until_date=int(time.time()) + minutes * 60)
+            bot.restrict_chat_member(
+                message.chat.id, 
+                user_id, 
+                until_date=int(time.time()) + minutes * 60,
+                permissions=types.ChatPermissions(can_send_messages=False)
+            )
             bot.reply_to(message, f"User {user_id} has been timed out for {minutes} minutes.")
     except (IndexError, ValueError):
         bot.reply_to(message, "Please specify a valid number of minutes.")
+    except telebot.apihelper.ApiException as e:
+        bot.reply_to(message, f"Failed to timeout user. Error: {str(e)}")
 
 @bot.message_handler(commands=['slowmode'])
 def slowmode(message):
@@ -376,10 +426,12 @@ def slowmode(message):
 
     try:
         seconds = int(message.text.split(maxsplit=1)[1])
-        bot.set_chat_permissions(message.chat.id, can_send_messages=True, can_send_media_messages=True, can_send_polls=True, can_send_other_messages=True, can_add_web_page_previews=True, can_change_info=True, can_invite_users=True, can_pin_messages=True)
+        bot.set_chat_slow_mode_delay(message.chat.id, seconds)
         bot.reply_to(message, f"Slowmode set to {seconds} seconds.")
     except (IndexError, ValueError):
         bot.reply_to(message, "Please specify a valid number of seconds.")
+    except telebot.apihelper.ApiException as e:
+        bot.reply_to(message, f"Failed to set slowmode. Error: {str(e)}")
 
 @bot.message_handler(commands=['rules'])
 def send_rules(message):
