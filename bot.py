@@ -12,7 +12,7 @@ keep_alive()
 
 # Access the environment variables
 API_TOKEN = os.getenv('TOKEN')
-OWNER_ID = int(os.getenv('ID'))  # Convert OWNER_ID to an integer
+OWNER_ID = 6241590270
 
 # Constants
 SAVE_DIR = 'saved_files'
