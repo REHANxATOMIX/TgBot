@@ -6,6 +6,8 @@ import time
 from collections import defaultdict
 from telebot import types
 import atexit
+from keep_alive import keep_alive
+keep_alive()
 
 
 # Access the environment variables
