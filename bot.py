@@ -9,7 +9,6 @@ import atexit
 from keep_alive import keep_alive
 keep_alive()
 
-
 # Access the environment variables
 API_TOKEN = os.getenv('TOKEN')
 OWNER_ID = 6241590270
@@ -17,7 +16,6 @@ OWNER_ID = 6241590270
 # Constants
 SAVE_DIR = 'saved_files'
 SAVE_FILE = os.path.join(SAVE_DIR, 'saved_messages.json')
-ADMIN_FILE = os.path.join(SAVE_DIR, 'admins.json')
 SCORE_FILE = os.path.join(SAVE_DIR, 'user_scores.json')
 LEADERBOARD_FILE = os.path.join(SAVE_DIR, 'leaderboard.json')
 
@@ -81,19 +79,6 @@ def load_saved_messages():
             return {}
     return {}
 
-def load_admins():
-    if os.path.isfile(ADMIN_FILE):
-        try:
-            with open(ADMIN_FILE, 'r') as file:
-                return json.load(file)
-        except json.JSONDecodeError:
-            print("Error decoding admins JSON.")
-            return set()
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            return set()
-    return set()
-
 def load_user_scores():
     if os.path.isfile(SCORE_FILE):
         try:
@@ -117,12 +102,13 @@ def save_messages_to_file(messages):
         json.dump(messages, file, indent=4)
     print("Saved messages updated.")
 
-def is_admin(user_id):
-    return user_id in admin_user_ids
+def is_admin(message):
+    user = message.from_user
+    chat_member = bot.get_chat_member(message.chat.id, user.id)
+    return chat_member.status in ['creator', 'administrator']
 
 # Data Initialization
 saved_messages = load_saved_messages()
-admin_user_ids = load_admins()
 user_scores = load_user_scores()
 leaderboard = load_leaderboard()
 
@@ -174,7 +160,7 @@ def format_leaderboard(page=1):
             f"Received Replies: {entry['received_replies']}\n"
             f"Mentioned: {entry['received_mentions']}"
         )
-    
+
     return "\n\n".join(leaderboard_entries)
 
 # Command Handlers
@@ -207,16 +193,16 @@ def show_leaderboard(message, page=1):
 def callback_handler(call):
     current_page = int(call.data.split('_')[1])
     new_page = current_page + 1 if call.data.startswith('next_') else max(current_page - 1, 1)
-    
+
     if new_page <= 0 or (new_page - 1) * 10 >= len(load_leaderboard()):  # Use loaded leaderboard
         return
-    
+
     markup = types.InlineKeyboardMarkup()
     if new_page > 1:
         markup.add(types.InlineKeyboardButton("Previous Page", callback_data=f'prev_{new_page}'))
     if new_page * 10 < len(load_leaderboard()):  # Update to use loaded leaderboard
         markup.add(types.InlineKeyboardButton("Next Page", callback_data=f'next_{new_page}'))
-    
+
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
@@ -231,7 +217,7 @@ def send_welcome(message):
         "Welcome to the bot! Here are the commands you can use:\n"
         "/save <keyword> - Save the message you are replying to with the specified keyword (admin only).\n"
         "/give <keyword> - Retrieve the saved message associated with the specified keyword.\n"
-        "/list - List all saved keywords (admin only).\n"
+        "/list - List all saved keywords.\n"
         "/delete <keyword> - Delete the saved message associated with the specified keyword (admin only).\n"
         "/clear - Clear all saved messages (admin only).\n"
         "/ban - Ban a user you reply to (admin only).\n"
@@ -240,8 +226,6 @@ def send_welcome(message):
         "/unmute - Unmute a user you reply to (admin only).\n"
         "/timeout <minutes> - Timeout a user you reply to for the specified number of minutes (admin only).\n"
         "/slowmode <seconds> - Set slowmode for the chat (admin only).\n"
-        "/setadmin <username> - Add a user as admin (admin only).\n"
-        "/unsetadmin <username> - Remove a user from admin (admin only).\n"
         "/rules - Display the rules of the chat.\n"
         "/lb or /leaderboard - Display the leaderboard.\n"
     )
@@ -249,7 +233,7 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['save'])
 def save_message(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -259,7 +243,7 @@ def save_message(message):
     else:
         reply_message_id = None
         print(f"Message {message.message_id} is not a reply.")
-        
+
     # Extract the keyword
     keyword = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
     if not keyword:
@@ -290,10 +274,6 @@ def give_message(message):
 
 @bot.message_handler(commands=['list'])
 def list_keywords(message):
-    if not is_admin(message.from_user.id):
-        bot.reply_to(message, "You are not authorized to use this command.")
-        return
-
     if not saved_messages:
         bot.reply_to(message, "No saved messages.")
         return
@@ -303,7 +283,7 @@ def list_keywords(message):
 
 @bot.message_handler(commands=['delete'])
 def delete_message(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -321,7 +301,7 @@ def delete_message(message):
 
 @bot.message_handler(commands=['clear'])
 def clear_messages(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -331,7 +311,7 @@ def clear_messages(message):
 
 @bot.message_handler(commands=['ban'])
 def ban_user(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -342,7 +322,7 @@ def ban_user(message):
 
 @bot.message_handler(commands=['unban'])
 def unban_user(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -353,7 +333,7 @@ def unban_user(message):
 
 @bot.message_handler(commands=['mute'])
 def mute_user(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -364,7 +344,7 @@ def mute_user(message):
 
 @bot.message_handler(commands=['unmute'])
 def unmute_user(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -375,7 +355,7 @@ def unmute_user(message):
 
 @bot.message_handler(commands=['timeout'])
 def timeout_user(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
@@ -390,54 +370,16 @@ def timeout_user(message):
 
 @bot.message_handler(commands=['slowmode'])
 def slowmode(message):
-    if not is_admin(message.from_user.id):
+    if not is_admin(message):
         bot.reply_to(message, "You are not authorized to use this command.")
         return
 
     try:
         seconds = int(message.text.split(maxsplit=1)[1])
-        bot.set_chat_permissions(message.chat.id, can_send_messages=True, can_send_media_messages=True, can_send_polls=True, can_send_other_messages=True, can_add_web_page_previews=True, can_change_info=True, can_invite_to_group=True, can_pin_messages=True)
+        bot.set_chat_permissions(message.chat.id, can_send_messages=True, can_send_media_messages=True, can_send_polls=True, can_send_other_messages=True, can_add_web_page_previews=True, can_change_info=True, can_invite_users=True, can_pin_messages=True)
         bot.reply_to(message, f"Slowmode set to {seconds} seconds.")
     except (IndexError, ValueError):
         bot.reply_to(message, "Please specify a valid number of seconds.")
-
-@bot.message_handler(commands=['setadmin'])
-def set_admin(message):
-    if not is_admin(message.from_user.id):
-        bot.reply_to(message, "You are not authorized to use this command.")
-        return
-
-    try:
-        username = message.text.split(maxsplit=1)[1]
-        user_id = get_user_id_from_username(username)
-        if user_id:
-            admin_user_ids.add(user_id)
-            with open(ADMIN_FILE, 'w') as file:
-                json.dump(list(admin_user_ids), file, indent=4)
-            bot.reply_to(message, f"User @{username} has been added as an admin.")
-        else:
-            bot.reply_to(message, "User not found.")
-    except IndexError:
-        bot.reply_to(message, "Please provide a username.")
-
-@bot.message_handler(commands=['unsetadmin'])
-def unset_admin(message):
-    if not is_admin(message.from_user.id):
-        bot.reply_to(message, "You are not authorized to use this command.")
-        return
-
-    try:
-        username = message.text.split(maxsplit=1)[1]
-        user_id = get_user_id_from_username(username)
-        if user_id in admin_user_ids:
-            admin_user_ids.remove(user_id)
-            with open(ADMIN_FILE, 'w') as file:
-                json.dump(list(admin_user_ids), file, indent=4)
-            bot.reply_to(message, f"User @{username} has been removed as an admin.")
-        else:
-            bot.reply_to(message, "User is not an admin.")
-    except IndexError:
-        bot.reply_to(message, "Please provide a username.")
 
 @bot.message_handler(commands=['rules'])
 def send_rules(message):
@@ -454,15 +396,15 @@ def send_rules(message):
 def handle_message(message):
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
-    
+
     # Update user stats
     update_user_stats(user_id, username, sent_messages=1)
-    
+
     # Handle replies
     if message.reply_to_message:
         replied_user_id = message.reply_to_message.from_user.id
         update_user_stats(replied_user_id, received_replies=1)
-    
+
     # Handle mentions
     mentions = extract_mentions(message.text)
     if mentions:
